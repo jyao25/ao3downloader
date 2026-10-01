@@ -11,7 +11,15 @@ from ao3downloader.repo import Repository
 
 
 class Ao3:
-    def __init__(self, repo: Repository, fileops: FileOps, filetypes: list[str], pages: int, series: bool, images: bool, mark: bool=False) -> None:
+    def __init__(
+            self, 
+            repo: Repository, 
+            fileops: FileOps, 
+            filetypes: list[str], 
+            pages: int | None, 
+            series: bool, 
+            images: bool, 
+            mark: bool = False) -> None:
         self.repo = repo
         self.fileops = fileops
         self.filetypes = filetypes
@@ -22,7 +30,7 @@ class Ao3:
         self.debug = fileops.get_ini_value_boolean(strings.INI_DEBUG_LOGGING, False)
 
 
-    def download(self, link: str, visited: list[str]=None) -> None:
+    def download(self, link: str, visited: list[str] | None = None) -> None:
 
         log = {}
         if not visited: visited = []
@@ -69,42 +77,59 @@ class Ao3:
         return links_list
 
 
-    def get_work_links_recursive(self, links_list: dict[str, dict], link: str, visited_series: list[str], metadata: bool, soup: BeautifulSoup=None) -> None:
+    def get_work_links_recursive(
+            self, 
+            links_list: dict[str, dict | None], 
+            link: str, 
+            visited_series: list[str], 
+            metadata: bool, 
+            soup: BeautifulSoup | None = None) -> None:
 
         if parse_text.is_work(link):
             if link not in links_list:
-                if metadata:
-                    metadata = parse_soup.get_work_metadata_from_list(soup, link)
-                    links_list[link] = metadata
+                if metadata and soup:
+                    work_metadata = parse_soup.get_work_metadata_from_list(soup, link)
+                    links_list[link] = work_metadata
                 else:
                     links_list[link] = None
         elif parse_text.is_series(link):
             if link not in visited_series:
                 visited_series.append(link)
+                total_pages = None
                 while True:
                     series_soup = self.repo.get_soup(link)
                     series_soup = self.proceed(series_soup)
+                    if total_pages is None:
+                        total_pages = parse_soup.get_total_pages(series_soup)
                     work_urls = parse_soup.get_work_urls(series_soup)
-                    if len(work_urls) == 0: break
                     for work_url in work_urls:
                         self.get_work_links_recursive(links_list, work_url, visited_series, metadata, series_soup)
+                    pagenum = parse_text.get_page_number(link)
+                    if not total_pages or pagenum >= total_pages:
+                        break
                     link = parse_text.get_next_page(link)
         elif strings.AO3_BASE_URL in link:
+            # special case for subscriptions page - it doesn't have blurbs, so any series
+            # links encountered are directly subscribed to and should always be downloaded.
+            include_series = parse_text.is_subscriptions(link) or self.series
+            total_pages = None
             while True:
                 self.fileops.write_log({'link': link, 'message': strings.INFO_STARTING_PAGE, 'level': 'debug'})
                 thesoup = self.repo.get_soup(link)
-                urls = parse_soup.get_work_and_series_urls(thesoup, self.series)
-                if len(urls) == 0:
-                    if self.debug: self.fileops.write_log({'link': link, 'message': strings.INFO_NO_WORKS_ON_PAGE, 'level': 'debug'})
-                    break
+                if total_pages is None:
+                    total_pages = parse_soup.get_total_pages(thesoup)
+                urls = parse_soup.get_work_and_series_urls(thesoup, include_series)
                 for url in urls:
                     self.get_work_links_recursive(links_list, url, visited_series, metadata, thesoup)
+                pagenum = parse_text.get_page_number(link)
+                if not total_pages or pagenum >= total_pages:
+                    break
                 link = parse_text.get_next_page(link)
                 pagenum = parse_text.get_page_number(link)
                 if self.pages and pagenum == self.pages + 1:
                     if self.debug: self.fileops.write_log({'link': link, 'message': strings.INFO_PAGE_LIMIT_REACHED, 'level': 'debug'})
                     break
-                print(strings.INFO_FINISHED_PAGE.format(str(pagenum - 1), str(pagenum)))
+                print(strings.INFO_FINISHED_PAGE.format(str(pagenum - 1), str(pagenum), str(total_pages)))
         else:
             raise exceptions.InvalidLinkException(strings.ERROR_INVALID_LINK)
 
@@ -121,22 +146,32 @@ class Ao3:
             log = {}
             self.download_series(link, log, visited)        
         elif strings.AO3_BASE_URL in link:
+            # special case for subscriptions page - it doesn't have blurbs, so any series
+            # links encountered are directly subscribed to and should always be downloaded.
+            include_series = parse_text.is_subscriptions(link) or self.series
+            total_pages = None
             while True:
                 self.fileops.write_log({'link': link, 'message': strings.INFO_STARTING_PAGE, 'level': 'debug'})
                 thesoup = self.repo.get_soup(link)
-                urls = parse_soup.get_work_and_series_urls(thesoup, self.series)
-                if len(urls) == 0: 
-                    if self.debug: self.fileops.write_log({'link': link, 'message': strings.INFO_NO_WORKS_ON_PAGE, 'level': 'debug'})
-                    break
+                if total_pages is None:
+                    total_pages = parse_soup.get_total_pages(thesoup)
+                urls = parse_soup.get_work_and_series_urls(thesoup, include_series)
                 for url in urls:
                     self.download_recursive(url, log, visited)
                 if not self.mark:
+                    pagenum = parse_text.get_page_number(link)
+                    if not total_pages or pagenum >= total_pages:
+                        break
                     link = parse_text.get_next_page(link)
                     pagenum = parse_text.get_page_number(link)
                     if self.pages and pagenum == self.pages + 1:
                         if self.debug: self.fileops.write_log({'link': link, 'message': strings.INFO_PAGE_LIMIT_REACHED, 'level': 'debug'})
                         break
-                    print(strings.INFO_FINISHED_PAGE.format(str(pagenum - 1), str(pagenum)))
+                    print(strings.INFO_FINISHED_PAGE.format(str(pagenum - 1), str(pagenum), str(total_pages)))
+                else:
+                    total_pages = parse_soup.get_total_pages(thesoup)
+                    if not total_pages or total_pages <= 1:
+                        break
         else:
             raise exceptions.InvalidLinkException(strings.ERROR_INVALID_LINK)
 
@@ -145,21 +180,26 @@ class Ao3:
         """"Download all works in a series"""
 
         try:
+            total_pages = None
             while True:
                 series_soup = self.repo.get_soup(link)
                 series_soup = self.proceed(series_soup)
+                if total_pages is None:
+                    total_pages = parse_soup.get_total_pages(series_soup)
                 work_urls = parse_soup.get_work_urls(series_soup)
-                if len(work_urls) == 0: break
                 if self.debug: self.fileops.write_log({'link': link, 'message': strings.INFO_STARTING_PAGE, 'level': 'debug'})
                 for work_url in work_urls:
                     self.download_recursive(work_url, log, visited)
+                pagenum = parse_text.get_page_number(link)
+                if not total_pages or pagenum >= total_pages:
+                    break
                 link = parse_text.get_next_page(link)
         except Exception as e:
             log['link'] = link
             self.log_error(log, e)
 
 
-    def download_work(self, link: str, log: dict, chapters: str) -> None:
+    def download_work(self, link: str, log: dict, chapters: str | None) -> None:
         """Download a single work"""
 
         try:
@@ -173,7 +213,7 @@ class Ao3:
             self.fileops.write_log(log)
 
 
-    def try_download(self, work_url: str, log: dict, chapters: str) -> bool:
+    def try_download(self, work_url: str, log: dict, chapters: str | None) -> bool:
         """Main download logic"""
 
         thesoup = self.repo.get_soup(work_url)
@@ -201,7 +241,7 @@ class Ao3:
             counter = 0
             imagelinks = parse_soup.get_image_links(thesoup)
             for img in imagelinks:
-                if str.startswith(img, '/'): break
+                if str.startswith(img, '/'): continue
                 try:
                     ext = os.path.splitext(img)[1]
                     if '?' in ext: ext = ext[:ext.index('?')]
@@ -227,6 +267,8 @@ class Ao3:
             raise exceptions.LockedException(strings.ERROR_LOCKED)
         if parse_soup.is_deleted(thesoup):
             raise exceptions.DeletedException(strings.ERROR_DELETED)
+        if parse_soup.is_hidden(thesoup):
+            raise exceptions.HiddenException(strings.ERROR_HIDDEN)
         if parse_soup.is_explicit(thesoup):
             proceed_url = parse_soup.get_proceed_link(thesoup)
             thesoup = self.repo.get_soup(proceed_url)

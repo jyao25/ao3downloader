@@ -1,11 +1,11 @@
 [project]
 name = "ao3downloader"
-version = "2026.2.0"
+version = "2026.7.3"
 description = "Utility for downloading fanfiction in bulk from the Archive of Our Own"
 readme = "README.md"
 license = "GPL-3.0-only"
 license-files = ["LICENSE"]
-requires-python = ">=3.9,<3.13"
+requires-python = ">=3.10,<3.13"
 authors = [
     { name = "nianeyna", email = "nianeyna@gmail.com" }
 ]
@@ -20,9 +20,8 @@ keywords = [
 dependencies = [
     "beautifulsoup4>=4.13.4",
     "mobi>=0.3.3",
-    "pdfquery>=0.4.3",
+    "pypdf>=6.14.2",
     "requests>=2.32.5",
-    "six>=1.17.0",
     "tqdm>=4.67.1",
 ]
 
@@ -53,3 +52,8 @@ name = "testpypi"
 url = "https://test.pypi.org/simple/"
 publish-url = "https://test.pypi.org/legacy/"
 explicit = true
+
+[tool.pytest.ini_options]
+markers = [
+    "ebook: exercises a downloaded ebook fixture file (auto-applied in conftest.py)",
+]

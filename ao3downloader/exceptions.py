@@ -17,6 +17,10 @@ class DeletedException(Ao3DownloaderException):
     pass
 
 
+class HiddenException(Ao3DownloaderException):
+    pass
+
+
 class ProceedException(Ao3DownloaderException):
     pass
 
@@ -34,4 +38,16 @@ class InvalidLinkException(Ao3DownloaderException):
 
 
 class InvalidStatusCodeException(Ao3DownloaderException):
+    pass
+
+
+class CloudflareException(Ao3DownloaderException):
+    pass
+
+
+class PdfParsingException(Ao3DownloaderException):
+    pass
+
+
+class SeriesLinkException(Ao3DownloaderException):
     pass

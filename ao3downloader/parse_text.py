@@ -1,10 +1,11 @@
 import datetime
 import os
+import re
 
 from ao3downloader import strings
 
 
-def get_pinboard_url(api_token: str, date: datetime.datetime) -> str:
+def get_pinboard_url(api_token: str, date: datetime.datetime | None) -> str:
     """
     correctly formats a pinboard url to include an api token and (optionally) a timestamp, then returns it as a string
     """
@@ -41,6 +42,16 @@ def get_valid_filepath(filename: str, maximum: int) -> str:
     return valid_name[:maximum].strip()
 
 
+def normalize_path_input(folder: str) -> str:
+    """For file or folder path inputs. Strips enclosing quotes and leading and trailing whitespace."""
+    if not folder:
+        return folder
+    folder = folder.strip()
+    if len(folder) >= 2 and folder[0] == folder[-1] and folder[0] in ('"', "'"):
+        folder = folder[1:-1].strip()
+    return folder
+
+
 def get_file_type(filetype: str) -> str:
     """
     creates a filename suffix string for an input (uppercase) filetype and returns it
@@ -49,7 +60,7 @@ def get_file_type(filetype: str) -> str:
     return '.' + filetype.lower()
 
 
-def get_work_number(link: str) -> str:
+def get_work_number(link: str) -> str | None:
     """
     gets the work number from an ao3 work link
     """
@@ -57,7 +68,7 @@ def get_work_number(link: str) -> str:
     return get_digits_after('/works/', link)
 
 
-def get_series_number(link: str) -> str:
+def get_series_number(link: str) -> str | None:
     """
     gets the series number from an ao3 series link
     """
@@ -81,7 +92,17 @@ def is_series(link: str) -> bool:
     return get_series_number(link) != None
 
 
-def get_digits_after(test: str, url: str) -> str:
+def is_subscriptions(link: str) -> bool:
+    """
+    checks if a link is for an ao3 subscriptions page.
+    matches the url path regardless of username casing or query string.
+    """
+
+    path = link.split('?')[0].rstrip('/')
+    return path.endswith('/subscriptions')
+
+
+def get_digits_after(test: str, url: str) -> str | None:
     """
     retrieves all consecutive numerical digits in a url after a given test string.
     if the test string doesn't exist or there are no numbers found, the function returns None
@@ -179,6 +200,29 @@ def get_current_chapters(text: str, index: int) -> str:
             currentchap += c
     currentchap = currentchap[::-1]
     return currentchap
+
+
+def get_last_visited(text: str) -> str:
+    """
+    extracts the date from 'Last visited: 10 Jul 2026' text found on ao3 reading history pages.
+    returns an empty string if no last visited date is found.
+    """
+
+    normalized = ' '.join(text.split())
+    match = re.search(r'Last visited: (\d{1,2} \w{3} \d{4})', normalized)
+    return match.group(1) if match else ''
+
+
+def get_times_visited(text: str) -> str:
+    """
+    extracts the visit count from 'Visited 6 times' or 'Visited once' text found on ao3 reading history pages.
+    returns an empty string if no visit count is found.
+    """
+
+    normalized = ' '.join(text.split())
+    if 'Visited once' in normalized: return '1'
+    match = re.search(r'Visited ([\d,]+) times', normalized)
+    return match.group(1).replace(',', '') if match else ''
 
 
 def get_payload(username: str, password: str, token: str) -> dict[str, str]:

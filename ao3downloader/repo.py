@@ -29,6 +29,7 @@ class Repository:
         self.debug = fileops.get_ini_value_boolean(strings.INI_DEBUG_LOGGING, False)
         self.extra_wait = fileops.get_ini_value_integer(strings.INI_WAIT_TIME, 0)
         self.max_retries = fileops.get_ini_value_integer(strings.INI_MAX_RETRIES, 0)
+        self.max_timeouts = fileops.get_ini_value_integer(strings.INI_MAX_TIMEOUTS, 3)
 
 
     def __enter__(self):
@@ -62,10 +63,16 @@ class Repository:
         return response
 
 
-    def my_request(self, method: str, url: str, data: dict[str, str] = None) -> requests.Response:
+    def my_request(self, method: str, url: str, data: dict[str, str] | None = None) -> requests.Response:
         """Get response from a url."""
 
+        # normalize http -> https for ao3 links. older downloaded works may contain http
+        # links in their embedded metadata, and the resulting redirect trips cloudflare.
+        if strings.AO3_DOMAIN in url.lower() and url.lower().startswith('http://'):
+            url = 'https://' + url[len('http://'):]
+
         attempt = 0
+        timeouts = 0
 
         while True:
             should_retry = strings.AO3_DOMAIN in url.lower() and (self.max_retries == 0 or attempt < self.max_retries)
@@ -77,7 +84,14 @@ class Repository:
                 except requests.exceptions.Timeout as e: # raw timeout exceptions are way too verbose
                     raise exceptions.TimeoutException(strings.ERROR_TIMEOUT.format(self.timeout)) from e
             except Exception as e:
-                if should_retry:
+                # a page that times out repeatedly is unlikely to recover, so give up after (consecutive) 
+                # timeouts reach the configured limit to avoid wasting a lot of time on a dead page.
+                if isinstance(e, exceptions.TimeoutException):
+                    timeouts += 1
+                else:
+                    timeouts = 0
+                timeout_capped = self.max_timeouts != 0 and timeouts >= self.max_timeouts
+                if should_retry and not timeout_capped:
                     attempt += 1
                     self.log_error(url, strings.MESSAGE_RETRY.format(method, attempt, retry_delay), e)
                     sleep(retry_delay)
@@ -86,17 +100,14 @@ class Repository:
                     self.log_error(url, strings.ERROR_HTTP_REQUEST, e)
                     raise
 
+            timeouts = 0
+
             if response.status_code in self.retry_statuses:
-                if should_retry:
+                if self.retry_or_raise(should_retry, attempt, method, url, retry_delay,
+                        str(response.status_code),
+                        exceptions.InvalidStatusCodeException(strings.ERROR_INVALID_STATUS_CODE.format(response.status_code))):
                     attempt += 1
-                    if self.debug:
-                        self.fileops.write_log(
-                            {'link': url, 'message': strings.MESSAGE_RETRY.format(method, attempt, retry_delay),
-                             'error': str(response.status_code), 'level': 'debug'})
-                    sleep(retry_delay)
                     continue
-                else:
-                    raise exceptions.InvalidStatusCodeException(strings.ERROR_INVALID_STATUS_CODE.format(response.status_code))
 
             if response.status_code == codes['too_many_requests']:
                 try:
@@ -112,13 +123,22 @@ class Repository:
                 print(strings.MESSAGE_RESUMING)
                 continue
 
+            # this check follows the retry-after check because a cloudflare response that is also 
+            # a 429 can happen, and should be handled with pause logic rather than retry logic
+            if self.is_cloudflare_response(response):
+                if self.retry_or_raise(should_retry, attempt, method, url, retry_delay,
+                        strings.ERROR_CLOUDFLARE,
+                        exceptions.CloudflareException(strings.ERROR_CLOUDFLARE)):
+                    attempt += 1
+                    continue
+
             if self.extra_wait > 0: sleep(self.extra_wait)
 
             if self.debug:
                 self.fileops.write_log(
-                    {'link': url, 'message': strings.MESSAGE_SUCCESS.format(method, response.status_code), 
+                    {'link': url, 'message': strings.MESSAGE_SUCCESS.format(method, response.status_code),
                      'level': 'debug'})
-                
+
             return response
 
 
@@ -132,7 +152,7 @@ class Repository:
         response = self.my_request('POST', strings.AO3_LOGIN_URL, payload)
         soup = BeautifulSoup(response.text, 'html.parser')
         if not soup: raise Exception(strings.ERROR_FAILED_LOGIN.format(strings.FAILED_LOGIN_NO_RESPONSE))
-        if parse_soup.is_failed_login(soup): # raise exception type that indicates we should clear username and password data
+        if not parse_soup.is_logged_in(soup): # raise exception type that indicates we should clear username and password data
             raise exceptions.LoginException(strings.ERROR_FAILED_LOGIN.format(strings.FAILED_LOGIN_INVALID_CREDENTIALS))
         
 
@@ -157,6 +177,42 @@ class Repository:
             if not isinstance(e, exceptions.Ao3DownloaderException):
                 log['stacktrace'] = ''.join(traceback.TracebackException.from_exception(e).format())
             self.fileops.write_log(log)
+
+
+    def retry_or_raise(self, should_retry: bool, attempt: int, method: str, url: str,
+                       retry_delay: float, error: str, exc: Exception) -> bool:
+        """Retry the request if possible, otherwise raise the given exception.
+        Returns True if the caller should continue the retry loop."""
+        if should_retry:
+            if self.debug:
+                self.fileops.write_log(
+                    {'link': url, 'message': strings.MESSAGE_RETRY.format(method, attempt + 1, retry_delay),
+                     'error': error, 'level': 'debug'})
+            sleep(retry_delay)
+            return True
+        raise exc
+
+
+    @staticmethod
+    def is_cloudflare_response(response: requests.Response) -> bool:
+        content_type = response.headers.get('Content-Type', '').lower()
+        if not content_type.startswith('text/html'):
+            return False
+        cloudflare_markers = [
+            # common generic cloudflare page titles. unlikely, since ao3 uses their own branding, 
+            # but worth checking for. shouldn't false positive on works with titles that happen 
+            # to match the strings - a legitimate ao3 title will include "| Archive of Our Own"
+            '<title>just a moment...</title>',
+            '<title>attention required!</title>',
+            '<title>access denied</title>',
+            # checking for suspicious javascript variables. these *will* false positive if a user
+            # includes them in the work, but the chances of that are very very low, I hope. 
+            'cf-browser-verification',
+            'id="challenge-error-text"',
+            'id="cf-wrapper"',
+            '_cf_chl_opt',
+        ]
+        return any(marker in response.text.lower() for marker in cloudflare_markers)
 
 
     def get_delay(self, attempt: int) -> float:

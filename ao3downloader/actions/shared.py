@@ -21,7 +21,7 @@ def link(fileops: FileOps) -> str:
     return link
 
 
-def pages() -> int:
+def pages() -> int | None:
     print(strings.AO3_PROMPT_PAGES)
     pages = input()
 
@@ -39,6 +39,20 @@ def images() -> bool:
     print(strings.AO3_PROMPT_IMAGES)
     images = True if input() == strings.PROMPT_YES else False
     return images
+
+
+def links_only() -> bool:
+    print(strings.PROMPT_LINKS_ONLY)
+    return True if input() == strings.PROMPT_YES else False
+
+
+def write_links_file(fileops: FileOps, urls: list[str], prefix: str) -> str:
+    filename = f'{prefix}_{datetime.datetime.now().strftime("%m%d%Y%H%M%S")}.txt'
+    path = os.path.join(fileops.downloadfolder, filename)
+    with open(path, 'w') as f:
+        for url in urls:
+            f.write(url + '\n')
+    return path
 
 
 def metadata() -> bool:
@@ -66,7 +80,7 @@ def visited(fileops: FileOps, filetypes: list[str]) -> list[str]:
     return visited
 
 
-def pinboard_date() -> datetime.datetime:
+def pinboard_date() -> datetime.datetime | None:
     print(strings.PINBOARD_PROMPT_DATE)
     getdate = True if input() == strings.PROMPT_YES else False
     if getdate:
@@ -91,14 +105,25 @@ def api_token(fileops: FileOps) -> str:
             strings.SETTING_API_TOKEN)
 
 
+def links_file() -> str:
+    while True:
+        print(strings.AO3_PROMPT_FILE_INPUT)
+        path = parse_text.normalize_path_input(input())
+        if os.path.exists(path):
+            break
+        else:
+            print(strings.INFO_NO_FILE.format(path))
+    return path
+
+
 def redownload_folder() -> str:
     while True:
         print(strings.REDOWNLOAD_PROMPT_FOLDER)
-        folder = input()
-        if os.path.exists(folder): 
+        folder = parse_text.normalize_path_input(input())
+        if os.path.isdir(folder):
             break
         else:
-            print(strings.INFO_NO_FOLDER)
+            print(strings.INFO_NO_FOLDER.format(folder))
     return folder
 
 
@@ -165,6 +190,7 @@ def ao3_login(repo: Repository, fileops: FileOps, force: bool=False) -> None:
         except exceptions.LoginException:
             fileops.save_setting(strings.SETTING_USERNAME, None)
             fileops.save_setting(strings.SETTING_PASSWORD, None)
+            print(strings.MESSAGE_LOGIN_RESET)
             raise
 
 
@@ -209,23 +235,31 @@ def update_types(fileops: FileOps) -> list[str]:
 
 
 def update_folder(fileops: FileOps) -> str:
-    folder = fileops.get_setting(strings.SETTING_UPDATE_FOLDER)
-    if folder:
-        print(strings.UPDATE_PROMPT_USE_SAVED_FOLDER)
-        if input() == strings.PROMPT_YES: 
-            return folder
+    saved = fileops.get_setting(strings.SETTING_UPDATE_FOLDER)
+    if saved:
+        normalized = parse_text.normalize_path_input(saved)
+        if os.path.isdir(normalized):
+            print(strings.UPDATE_PROMPT_USE_SAVED_FOLDER)
+            if input() == strings.PROMPT_YES:
+                return normalized
         else:
-            fileops.save_setting(
-                strings.SETTING_UPDATE_FOLDER, 
-                None)
-    folder = fileops.setting(
-        strings.UPDATE_PROMPT_INPUT,
-        strings.SETTING_UPDATE_FOLDER)
-    return folder
+            print(strings.INFO_SAVED_FOLDER_MISSING.format(saved))
+        fileops.save_setting(strings.SETTING_UPDATE_FOLDER, None)
+    while True:
+        print(strings.UPDATE_PROMPT_INPUT)
+        folder = parse_text.normalize_path_input(input())
+        if os.path.isdir(folder):
+            fileops.save_setting(strings.SETTING_UPDATE_FOLDER, folder)
+            return folder
+        print(strings.INFO_NO_FOLDER.format(folder))
 
 
 def get_files_of_type(folder: str, filetypes: list[str]) -> list[dict[str, str]]:
     print(strings.UPDATE_INFO_FILES)
+    if not os.path.isdir(folder):
+        print(strings.INFO_NO_FOLDER.format(folder))
+        print(strings.UPDATE_INFO_NUM_RETURNED.format(0))
+        return []
     results = []
     for subdir, dirs, files in os.walk(folder):
         for file in files:
@@ -237,7 +271,7 @@ def get_files_of_type(folder: str, filetypes: list[str]) -> list[dict[str, str]]
     return results
 
 
-def get_last_page_downloaded(fileops: FileOps) -> str:
+def get_last_page_downloaded(fileops: FileOps) -> str | None:
     latest = None
     try:
         logs = fileops.load_logfile()

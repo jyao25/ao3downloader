@@ -23,8 +23,10 @@ INI_NAME_LENGTH = 'FileNameLength'
 INI_NAME_PATTERN = 'FileNamePattern'
 INI_DEBUG_LOGGING = 'EnableDebugLogging'
 INI_MAX_RETRIES = 'MaxRetries'
+INI_MAX_TIMEOUTS = 'MaxTimeouts'
+INI_DOWNLOAD_FOLDER = 'DownloadFolder'
 
-INI_DEFAULT_NAME_LENGTH = '50'
+INI_DEFAULT_NAME_LENGTH = 50
 INI_DEFAULT_NAME_PATTERN = '{worknum} {title} - {author}'
 
 SETTING_USERNAME = 'username'
@@ -75,17 +77,21 @@ AO3_PROMPT_USE_SAVED_DOWNLOAD_TYPES = 'use saved download type list? ({}/{})'.fo
 AO3_ACCEPTABLE_DOWNLOAD_TYPES = ['AZW3', 'EPUB', 'MOBI', 'PDF', 'HTML']
 AO3_PROMPT_DOWNLOAD_TYPE = 'please enter download type. choose from the following (case-sensitive):\n' + '\n'.join(AO3_ACCEPTABLE_DOWNLOAD_TYPES)
 AO3_PROMPT_DOWNLOAD_TYPES_COMPLETE = 'done entering file types? ({}/{})'.format(PROMPT_YES, PROMPT_NO)
-AO3_PROMPT_LINK = 'please enter link to ao3'
+AO3_PROMPT_LINK = 'please enter a link to ao3 (for example bookmarks, search results, or a series)'
 AO3_PROMPT_LAST_PAGE = 'do you want to start downloading from the page you stopped on last time? ({}/{})'.format(PROMPT_YES, PROMPT_NO)
 AO3_PROMPT_PAGES = 'please enter page number to stop on. enter 0 to download all pages.'
 AO3_PROMPT_IMAGES = 'do you want to download embedded images? (will be saved separately) ({}/{})'.format(PROMPT_YES, PROMPT_NO)
-AO3_PROMPT_SERIES = 'do you want to get works from all encountered series links? (bookmarked series will always be downloaded, regardless of this option) ({}/{})'.format(PROMPT_YES, PROMPT_NO)
+AO3_PROMPT_SERIES = 'do you want to get works from all encountered series links? (bookmarked series and subscriptions will always be downloaded, regardless of this option) ({}/{})'.format(PROMPT_YES, PROMPT_NO)
 AO3_PROMPT_METADATA = 'do you want to include work metadata? ({}/{})'.format(PROMPT_YES, PROMPT_NO)
 AO3_PROMPT_FILE_INPUT = 'please enter complete file path (including file extension) to file containing links to download (must be a text file with one link on each line)'
 AO3_INFO_LOGIN = 'logging in'
 AO3_INFO_DOWNLOADING = 'downloading works'
 AO3_INFO_FILE_TYPE = 'added {} to list of download types'
 AO3_INFO_VISITED = 'generating list of work links that are already in the downloads folder (will be skipped)'
+
+PROMPT_LINKS_ONLY = 'save links to a file instead of downloading? ({}/{})'.format(PROMPT_YES, PROMPT_NO)
+INFO_LINKS_FILE_WRITTEN = 'wrote {} links to {}'
+INFO_NO_LINKS_TO_WRITE = 'no links to write'
 
 UPDATE_PROMPT_INPUT = 'input path to folder containing files you want to check for updates (also checks subfolders)'
 UPDATE_INFO_FILES = 'getting list of files'
@@ -113,13 +119,15 @@ REDOWNLOAD_INFO_URLS = 'getting work urls'
 REDOWNLOAD_INFO_DONE = 'done getting work urls. {} urls found'
 
 IGNORELIST_INFO_INITIALIZED = f'{IGNORELIST_FILE_NAME} has been added to the main script folder. you can use this file to perma-skip downloading works or series that you know you don\'t want to download. to use this file open it in a text editor (the default text editor for Windows is called Notepad. on Mac, you can use TextEdit) and add the links you want to ignore, one on each line. these should be links to ao3 works or series. other links will be ignored. each link MUST begin with https://archiveofourown.org and be placed at the start of a new line. you may also *optionally* add a comment after each link. comments must begin with a SEMICOLON followed by a SPACE: `; ` and must not contain any newline characters (the entire comment must be on the same line as the link). otherwise, you can write anything you want in the comment. comments are for your personal reference only and are not used by the script.'
-IGNORELIST_PROMPT_CHECK_DELETED = 'do you want to check the log file for deleted links and add them to the ignore list automatically?'
+IGNORELIST_PROMPT_CHECK_DELETED = 'do you want to check the log file for deleted links and add them to the ignore list automatically? ({}/{})'.format(PROMPT_YES, PROMPT_NO)
 
 INFO_NO_LOG_FILE = 'no log file'
-INFO_NO_FOLDER = 'folder does not exist'
+INFO_NO_FILE = 'file does not exist: {}'
+INFO_NO_FOLDER = 'folder does not exist: {}'
+INFO_SAVED_FOLDER_MISSING = 'previously saved folder no longer exists: {}'
 INFO_EXCLUDING_WORKS = 'filtering out works that are already in the downloads folder'
 INFO_STARTING_PAGE = 'starting page'
-INFO_FINISHED_PAGE = 'finished getting page {}. starting page {}'
+INFO_FINISHED_PAGE = 'finished getting page {}. starting page {} of {}'
 INFO_PARSING_LOGS = 'parsing data from log entries with timestamps starting at {} and ending at {}'
 INFO_LINKS_LIST_CANCELED = '\nlink list generation manually canceled. list may not be complete.'
 INFO_NO_WORKS_ON_PAGE = 'ending scrape because no work or series urls were found on page'
@@ -133,6 +141,8 @@ MESSAGE_SERIES_FILE = 'found work in series'
 MESSAGE_RETRY = 'Retrying {} request. Attempt {}. {} seconds until next attempt.'
 MESSAGE_SUCCESS = 'Successful {} request with status code {}'
 MESSAGE_WELCOME = 'welcome to ao3downloader!\nthe script has been initialized in the following directory:\n\t{}\nif you would like to change any settings, you may do so by entering\n\'{}\' to quit this menu and then editing the file \'{}\'\n(located at the above folder path) before running the script again.\n'
+MESSAGE_DOWNLOAD_FOLDER = 'downloads will be saved to:\n\t{}\n'
+MESSAGE_DOWNLOAD_FOLDER_ERROR = 'could not create the download folder: {}\nplease check the \'' + INI_DOWNLOAD_FOLDER + '\' setting in ' + INI_FILE_NAME
 MESSAGE_EXIT = '\nexiting'
 MESSAGE_INI_FILE_CHANGED = 'the options available in ' + INI_FILE_NAME + ' have changed. a copy of the new default settings file has been saved as {}. please review the changes and update ' + INI_FILE_NAME + ' accordingly.'
 MESSAGE_INI_DIFFERENCES = 'the following differences were found:\n'
@@ -140,6 +150,7 @@ MESSAGE_INI_ADDED_KEY = 'added \'{}\' to \'{}\' section.\n'
 MESSAGE_INI_REMOVED_KEY = 'removed \'{}\' from \'{}\' section.\n'
 MESSAGE_INI_ADDED_SECTION = '\'{}\' section has been added.\n'
 MESSAGE_INI_REMOVED_SECTION = '\'{}\' section has been removed.\n'
+MESSAGE_LOGIN_RESET = 'login details have been reset; please try again'
 
 # endregion
 
@@ -150,7 +161,6 @@ AO3_BASE_URL = 'https://' + AO3_DOMAIN
 AO3_LOGIN_URL = AO3_BASE_URL + '/users/login'
 AO3_MARK_READ_URL = AO3_BASE_URL + '/works/{}/mark_as_read'
 
-AO3_FAILED_LOGIN = 'The password or user name you entered doesn\'t match our records.'
 AO3_PROCEED = 'Yes, Continue'
 AO3_MARK_READ = 'Mark as Read'
 
@@ -169,6 +179,7 @@ TIMESTAMP_URL = '{}-{}-{}T00:00:00Z'
 ERROR_INVALID_LINK = 'Not an ao3 link'
 ERROR_LOCKED = 'Locked'
 ERROR_DELETED = 'Deleted'
+ERROR_HIDDEN = 'Hidden'
 ERROR_FAILED_LOGIN = 'Failed login: {}'
 ERROR_PROCEED_LINK = 'Problem getting proceed link'
 ERROR_DOWNLOAD_LINK = 'Problem getting download link'
@@ -181,8 +192,12 @@ ERROR_LINKS_LIST = 'Error encountered while getting links list. List may not be 
 ERROR_HTTP_REQUEST = 'Unrecoverable error encountered while making web request'
 ERROR_INVALID_STATUS_CODE = 'Request failed with status code {}'
 ERROR_TIMEOUT = 'Request exceeded the timeout limit of {} seconds'
+ERROR_CLOUDFLARE = 'Cloudflare challenge or error page detected'
 ERROR_MARK_READ = 'Problem marking work as read'
-ERROR_MARK_READ_SKIP = 'Skipping marking work as read; could not find form input.'
+ERROR_MARK_READ_SKIP = 'Skipping marking work as read; could not find form input'
+ERROR_PDF_PARSE = 'Problem parsing pdf; skipping update check'
+ERROR_SERIES_LINK = 'Expected series information, but could not find it'
+ERROR_WORK_BLURB = 'Could not find work metadata in list'
 
 FAILED_LOGIN_NOT_FOUND = 'could not retrieve login page'
 FAILED_LOGIN_NO_RESPONSE = 'could not get a response from login request'
